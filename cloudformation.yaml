@@ -1,0 +1,126 @@
+# ------------------------------------------------------------------------------------
+# RescueGroups to WIX Collection Lambda 
+# Version: 1
+# Authors: Brandon Might (@bmight) 
+# ------------------------------------------------------------------------------------
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Front-End Application CI/CD CloudFormation Template'
+
+Parameters:
+  Username:
+    Description: 'RescueGroup Username'
+    Type: String
+    MinLength: 1
+  Password:
+    Type: String
+    Description: 'RescueGroup Password'
+    MinLength: 1
+  AccountId:
+    Type: String
+    Description: 'RescueGroup Account ID'
+    MinLength: 1
+  Collection:
+    Type: String
+    Description: 'WIX Collection Name'
+    MinLength: 1
+  Token:
+    Type: String
+    Description: 'WIX API Token'
+    MinLength: 1
+  CodeS3Bucket: 
+    Type: String
+    Description: 'Bucket name for zipped code'
+    MinLength: 1
+  CodeS3Key: 
+    Type: String
+    Description: 'S3 Key for zipped code'
+    MinLength: 1
+
+Resources:
+  RGToWixLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: cloudwatch
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - lambda:invokeFunctionUrl
+                Resource: '*'
+      Description: "Basic Lambda Role"
+
+  RGToWixLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code: 
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key : !Ref CodeS3Key
+      Description: "RescueGroup to WIX Collection"
+      Environment: 
+        Variables:
+          username: !Ref Username
+          password: !Ref Password
+          accountId: !Ref AccountId
+          collection: !Ref Collection
+          token: !Ref Token
+      FunctionName: 'RescueGroupsToWix'
+      MemorySize: 512
+      Handler: dist/handler.handler
+      PackageType: "Zip"
+      Role: !GetAtt RGToWixLambdaRole.Arn
+      Runtime: "nodejs18.x"
+      Timeout: 15
+
+  RGToWixEventTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Event Trigger for Lambda"
+      EventBusName: default
+      Name: "RGToWixTrigger"
+      ScheduleExpression: cron(0 * * * ? *)
+      Targets: 
+        - Id: lambda
+          Arn: !GetAtt RGToWixLambda.Arn
+
+  RGToWixLambdaURL:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn: !GetAtt RGToWixLambda.Arn
+
+  PermissionForURLInvoke:
+     Type: AWS::Lambda::Permission
+     Properties:
+       FunctionName: !Ref RGToWixLambda
+       FunctionUrlAuthType: 'NONE'
+       Action: lambda:InvokeFunctionUrl
+       Principal: '*'
+
+  EventPermissions:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RGToWixLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !GetAtt RGToWixEventTrigger.Arn
+
+Outputs:
+  LambdaFunctionURL:
+    Description: URL to Invoke RGToWixLambda
+    Value: !GetAtt RGToWixLambdaURL.FunctionUrl
