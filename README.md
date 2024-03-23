@@ -39,7 +39,7 @@ pet data on your Wix website.
 
 ```
 git clone
-cd RG-TO-WIX
+cd RGtoWix
 yarn install
 ```
 
